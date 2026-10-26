@@ -1,0 +1,148 @@
+name: Sync upstream
+
+"on":
+  schedule:
+    - cron: '17 1 * * *' # 09:17 Asia/Shanghai
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Check without merging
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository_owner == 'couai' && github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Merge upstream default branch and verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_REPOSITORY: ${{ github.repository }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        shell: bash
+        run: |
+          python3 - <<'PYTHON'
+          """Sync one fork's default branch without checking out or executing repository code."""
+
+          import json
+          import os
+          from pathlib import Path
+          import sys
+          from urllib.error import HTTPError
+          from urllib.parse import quote
+          from urllib.request import Request, urlopen
+
+
+          class ApiError(Exception):
+              def __init__(self, status, message):
+                  self.status = status
+                  super().__init__(message)
+
+
+          def request_api(path, data=None):
+              request = Request(
+                  "https://api.github.com/" + path,
+                  data=json.dumps(data).encode() if data is not None else None,
+                  headers={
+                      "Authorization": "Bearer " + os.environ["GH_TOKEN"],
+                      "Accept": "application/vnd.github+json",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+              )
+              try:
+                  with urlopen(request, timeout=45) as response:
+                      body = response.read()
+                      return json.loads(body) if body else None
+              except HTTPError as error:
+                  body = error.read().decode("utf-8", "replace")
+                  try:
+                      message = json.loads(body).get("message", body)
+                  except json.JSONDecodeError:
+                      message = body
+                  raise ApiError(error.code, f"HTTP {error.code} at {path}: {message}") from None
+
+
+          def sync(api, repository, dry_run=False):
+              repo = api(f"repos/{repository}")
+              if not repo.get("fork") or not repo.get("parent"):
+                  raise RuntimeError("The target repository is no longer a fork")
+              branch = repo["default_branch"]
+              parent = repo["parent"]
+              upstream = parent["full_name"]
+              source_branch = parent["default_branch"]
+              target_ref = f"repos/{repository}/git/ref/heads/{quote(branch, safe='')}"
+              source_ref = f"repos/{upstream}/git/ref/heads/{quote(source_branch, safe='')}"
+              old_sha = api(target_ref)["object"]["sha"]
+              source_sha = api(source_ref)["object"]["sha"]
+              report = {
+                  "repository": repository,
+                  "branch": branch,
+                  "upstream": upstream,
+                  "upstream_branch": source_branch,
+                  "upstream_sha": source_sha,
+                  "previous_sha": old_sha,
+              }
+              if old_sha == source_sha:
+                  return dict(report, status="up_to_date", ahead_by=0, behind_by=0)
+              try:
+                  source_label = quote(upstream.split('/')[0] + ':' + source_branch, safe='')
+                  comparison = api(f"repos/{repository}/compare/{source_label}...{old_sha}")
+              except ApiError as error:
+                  if error.status == 404 and "no common ancestor" in str(error).lower():
+                      return dict(report, status="blocked", reason="No common ancestor; manual history reconciliation required")
+                  raise
+              source_sha = comparison["base_commit"]["sha"]
+              report.update(upstream_sha=source_sha, ahead_by=comparison["ahead_by"], behind_by=comparison["behind_by"])
+              if comparison["behind_by"] == 0:
+                  return dict(report, status="up_to_date")
+              if dry_run:
+                  return dict(report, status="would_merge")
+              try:
+                  api(f"repos/{repository}/merges", {
+                      "base": branch,
+                      "head": source_sha,
+                      "commit_message": f"chore: sync upstream {upstream}:{source_branch}",
+                  })
+              except ApiError as error:
+                  if error.status == 409:
+                      return dict(report, status="blocked", reason="Merge conflict; existing branch retained")
+                  raise
+              new_sha = api(target_ref)["object"]["sha"]
+              verified = api(f"repos/{repository}/compare/{source_sha}...{new_sha}")
+              if verified["behind_by"] != 0:
+                  raise RuntimeError("Verification failed: the target does not contain the upstream commit")
+              return dict(report, status="synced", result_sha=new_sha)
+
+
+          def main():
+              try:
+                  report = sync(request_api, os.environ["TARGET_REPOSITORY"],
+                                os.environ.get("DRY_RUN", "false").lower() == "true")
+                  failed = False
+              except Exception as error:
+                  report = {"status": "failed", "reason": str(error)}
+                  failed = True
+              rendered = json.dumps(report, ensure_ascii=False, indent=2)
+              print(rendered)
+              if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
+                  with Path(summary).open("a") as file:
+                      file.write("## Upstream sync: " + report["status"] + "\n\n```json\n" + rendered + "\n```\n")
+              if report["status"] in {"blocked", "failed"}:
+                  level = "error" if failed else "warning"
+                  reason = report["reason"].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+                  print(f"::{level}::{reason}")
+              return int(failed)
+
+
+          if __name__ == "__main__":
+              sys.exit(main())
+          PYTHON
