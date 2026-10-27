@@ -1,0 +1,17 @@
+{
+	"name": "agent-purge-hook",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"description": "把 agent-purge 的人设写进每次 agent 请求的 system 段",
+	"magpie": {
+		"hooks": "./hooks.js",
+		"page": {
+			"title": "Persona",
+			"titles": {
+				"zh": "人设"
+			},
+			"file": "page/index.html"
+		}
+	}
+}

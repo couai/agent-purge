@@ -23,6 +23,7 @@
     "web": "node bin/agent-purge.mjs web",
     "matrix": "node bin/agent-purge.mjs matrix",
     "detect": "node bin/agent-purge.mjs detect",
+    "test": "node magpie-plugin/selftest.mjs && node magpie-plugin/test-page.mjs",
     "build:exe": "node scripts/build-exe.mjs",
     "prepack": "node -e \"require('node:fs').rmSync('personas/.build',{recursive:true,force:true})\""
   },

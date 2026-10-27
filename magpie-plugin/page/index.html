@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>人设</title>
+<link rel="stylesheet" href="style.css">
+<script src="_magpie/bridge.js"></script>
+<script src="personas.js"></script>
+<script src="app.js" defer></script>
+
+<h1>人设</h1>
+<p class="lead">点一个就换。写进的是这个插件的 options，下一个经过 magpie 的请求就按它改 system 段。</p>
+
+<section class="card">
+	<div class="now">
+		<span class="label">当前设置</span>
+		<strong id="now-persona">—</strong>
+		<span class="sep">/</span>
+		<span id="now-mode">—</span>
+	</div>
+	<label class="field">
+		<span>模式</span>
+		<select id="mode"></select>
+	</label>
+	<p id="status" class="status" role="status" aria-live="polite" hidden></p>
+</section>
+
+<details class="import">
+	<summary>导入人设 md</summary>
+	<div class="import-body">
+		<p class="hint">
+			选一个 .md 文件，或者把正文贴进来。正文存在这个插件的 options（<code>plugins.json</code>）里，不写你的磁盘。
+		</p>
+		<label class="field"><span>文件</span><input id="file" type="file" accept=".md,.markdown,text/markdown,text/plain"></label>
+		<label class="field"><span>正文</span><textarea id="body" rows="6" spellcheck="false" placeholder="---&#10;name: 我的人设&#10;---&#10;要写进 system 段的正文"></textarea></label>
+		<div class="pair">
+			<label class="field"><span>id</span><input id="pid" placeholder="my-persona" autocomplete="off" spellcheck="false"></label>
+			<label class="field"><span>名字</span><input id="pname" placeholder="默认取 frontmatter 的 name" autocomplete="off"></label>
+		</div>
+		<div class="pair actions">
+			<button id="import-save" type="button" class="primary">保存这个人设</button>
+			<button id="import-reset" type="button">清空</button>
+			<span id="import-count" class="label">还没有导入</span>
+			<button id="del-all" type="button" class="danger" hidden>删除全部导入</button>
+		</div>
+		<p id="import-err" class="status" role="alert" hidden></p>
+	</div>
+</details>
+
+<h2 id="count">全部人设</h2>
+<input id="q" type="search" placeholder="搜索名字、id 或说明" aria-label="搜索人设" autocomplete="off">
+<div id="list" class="list" role="group" aria-label="人设列表"></div>
+
+</html>

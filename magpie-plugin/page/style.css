@@ -1,0 +1,371 @@
+/* 人设页样式。颜色全部取自 bridge 设的 --magpie-*，所以深浅色与 magpie 窗口一致；
+   沙箱页只能加载自己的文件，这里不引任何外部字体或图片。bridge 的基础样式是零权重
+   （:where()），所以下面每条规则都会生效。 */
+:root {
+	color-scheme: light dark;
+	--fg: var(--magpie-fg, CanvasText);
+	--line: color-mix(in srgb, var(--fg) 16%, transparent);
+	--tint: color-mix(in srgb, var(--fg) 5%, transparent);
+	--muted: color-mix(in srgb, var(--fg) 60%, transparent);
+	--accent: var(--magpie-accent, #4f7cff);
+}
+
+body {
+	max-width: 760px;
+	margin: 0 auto;
+	padding: 28px 20px 48px;
+	line-height: 1.5;
+}
+
+h1 {
+	margin: 0 0 6px;
+	font-size: 20px;
+	letter-spacing: -0.01em;
+}
+
+h2 {
+	margin: 28px 0 10px;
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+
+.lead {
+	margin: 0 0 20px;
+	font-size: 13px;
+	color: var(--muted);
+}
+
+.card {
+	display: grid;
+	gap: 12px;
+	padding: 14px 16px;
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	background: var(--tint);
+}
+
+.now {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 8px;
+	font-size: 13px;
+}
+
+.now .label {
+	font-size: 11px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+
+.now strong {
+	font-size: 15px;
+	font-weight: 600;
+}
+
+.now .sep {
+	color: var(--muted);
+}
+
+.field {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	align-items: center;
+	gap: 10px;
+	font-size: 12px;
+	color: var(--muted);
+}
+
+select,
+#q {
+	font: inherit;
+	font-size: 13px;
+	color: inherit;
+	background: transparent;
+	border: 1px solid var(--line);
+	border-radius: 9px;
+}
+
+select {
+	width: 100%;
+	padding: 8px 10px;
+}
+
+#q {
+	box-sizing: border-box;
+	width: 100%;
+	padding: 9px 12px;
+}
+
+#q::placeholder {
+	color: var(--muted);
+}
+
+.status {
+	margin: 0;
+	font-size: 12px;
+	color: var(--muted);
+}
+
+.status[hidden] {
+	display: none;
+}
+
+.status[data-state="error"] {
+	color: #e5534b;
+}
+
+.list {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+	gap: 8px;
+	margin-top: 10px;
+}
+
+.persona {
+	display: grid;
+	gap: 3px;
+	padding: 10px 12px;
+	font: inherit;
+	color: inherit;
+	text-align: left;
+	cursor: pointer;
+	background: transparent;
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	transition:
+		border-color 0.12s,
+		background-color 0.12s;
+}
+
+.persona:hover {
+	border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+
+.persona.on {
+	border-color: var(--accent);
+	background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.persona strong {
+	font-size: 13.5px;
+	font-weight: 600;
+}
+
+.persona span {
+	overflow: hidden;
+	font-size: 12px;
+	line-height: 1.45;
+	color: var(--muted);
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+}
+
+.persona code {
+	overflow-wrap: anywhere;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 11px;
+	color: var(--muted);
+}
+
+.empty {
+	margin: 0;
+	font-size: 13px;
+	color: var(--muted);
+}
+
+/* 导入区：收在 <details> 里，不抢「点一个就换」的主操作 */
+.import {
+	margin-top: 12px;
+	border: 1px solid var(--line);
+	border-radius: 12px;
+}
+
+.import > summary {
+	padding: 11px 16px;
+	font-size: 13px;
+	cursor: pointer;
+	border-radius: 12px;
+}
+
+.import > summary::marker {
+	color: var(--muted);
+}
+
+.import[open] > summary {
+	border-bottom: 1px solid var(--line);
+	border-radius: 12px 12px 0 0;
+}
+
+.import-body {
+	display: grid;
+	gap: 12px;
+	padding: 14px 16px 16px;
+}
+
+.hint {
+	margin: 0;
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--muted);
+}
+
+.hint code {
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.import .field {
+	grid-template-columns: 52px 1fr;
+	align-items: start;
+}
+
+.import .field > span {
+	padding-top: 9px;
+}
+
+.pair {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 10px;
+}
+
+.pair.actions {
+	grid-template-columns: auto auto 1fr auto;
+	align-items: center;
+}
+
+input[type="file"],
+#pid,
+#pname,
+#body {
+	box-sizing: border-box;
+	width: 100%;
+	font: inherit;
+	font-size: 13px;
+	color: inherit;
+	background: transparent;
+	border: 1px solid var(--line);
+	border-radius: 9px;
+}
+
+input[type="file"] {
+	padding: 7px 9px;
+	font-size: 12px;
+}
+
+input[type="file"]::file-selector-button {
+	margin-right: 10px;
+	padding: 5px 10px;
+	font: inherit;
+	font-size: 12px;
+	color: inherit;
+	background: transparent;
+	border: 1px solid var(--line);
+	border-radius: 7px;
+	cursor: pointer;
+}
+
+#pid,
+#pname {
+	padding: 8px 10px;
+}
+
+#body {
+	min-height: 96px;
+	padding: 9px 12px;
+	line-height: 1.45;
+	resize: vertical;
+}
+
+#pid::placeholder,
+#pname::placeholder,
+#body::placeholder {
+	color: var(--muted);
+}
+
+#import-save,
+#import-reset,
+#del-all {
+	padding: 8px 14px;
+	font: inherit;
+	font-size: 13px;
+	color: inherit;
+	cursor: pointer;
+	background: transparent;
+	border: 1px solid var(--line);
+	border-radius: 9px;
+}
+
+#import-save {
+	border-color: var(--accent);
+	background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+#del-all {
+	color: #e5534b;
+	border-color: color-mix(in srgb, #e5534b 45%, var(--line));
+}
+
+#import-save[disabled],
+#import-reset[disabled],
+#del-all[disabled] {
+	opacity: 0.5;
+	cursor: default;
+}
+
+#import-count {
+	justify-self: end;
+	font-size: 11px;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+
+#import-err {
+	margin: 0;
+}
+
+.persona:focus-visible,
+select:focus-visible,
+#q:focus-visible,
+#file:focus-visible,
+#pid:focus-visible,
+#pname:focus-visible,
+#body:focus-visible,
+#import-save:focus-visible,
+#import-reset:focus-visible,
+#del-all:focus-visible,
+.import > summary:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+@media (max-width: 520px) {
+	.field,
+	.import .field {
+		grid-template-columns: 1fr;
+		gap: 4px;
+	}
+
+	.import .field > span {
+		padding-top: 0;
+	}
+
+	.pair,
+	.pair.actions {
+		grid-template-columns: 1fr;
+	}
+
+	#import-count {
+		justify-self: start;
+	}
+
+	.list {
+		grid-template-columns: 1fr;
+	}
+}

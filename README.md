@@ -1,6 +1,6 @@
 # agent-purge
 
-一份系统提示词，喂给多个 coding agent。支持替换（replace）、追加（append）、清空（off）三种模式，可热切换，全程可逆。
+一份系统提示词，喂给多个 coding agent。支持替换（replace）、只发人设（strict）、追加（append）、清空（off）四种模式，可热切换，全程可逆。
 
 ```
 agent-purge web          # 本地控制台 http://127.0.0.1:7788
@@ -56,6 +56,34 @@ agent-purge pi --persona <id>  # 只这一轮用别的
 
 闭源桌面端（提示词在服务端或二进制里）只做原样启动，不做任何注入——`agent-purge <h>` 会明确打印原因，不会假装生效。
 
+## magpie 网关插件（可选）
+
+[magpie](https://github.com/yetone/magpie) 把各家 agent 的请求收进本地网关。挂上这个插件后，**凡是经过网关的请求**（Claude Code、Codex、OpenCode、pi…）的 system 段都按 agent-purge 的当前人设改写——不用逐个 harness 装，换人设也不用重启 magpie。
+
+插件在仓库里，不进 npm 包（`files` 白名单），所以按路径装：
+
+```bash
+git clone https://github.com/ZiChuanLan/agent-purge
+magpie plugin add /path/to/agent-purge/magpie-plugin     # 按路径装
+magpie plugin options magpie-plugin '{"mode":"append"}'  # 插件名 = 目录名
+magpie plugin list                                      # 应看到 async gateway hook + Persona 页
+```
+
+插件读的还是 `~/.agent-purge/`（同样认 `AGENT_PURGE_HOME`）：`agent-purge use <id>` 之后下一个请求就换人设。magpie 里也会多出 **Persona** 页，点一下就把人设和模式写进插件的 options。
+
+四种模式和 CLI 一致，差别在网关手里只有文本、没有各家启动参数：
+
+| 模式 | 网关插件做什么 |
+|---|---|
+| `off` | 不动请求 |
+| `strict` | system 整段换成人设（工具说明也一起没了，harness 可能变笨） |
+| `append` | 人设挂在最前，宿主 system 原样 |
+| `replace` | 人设在前，再删掉宿主 system 里报名字的那句（近似；要干净用 `strict`） |
+
+options 三键：`mode`、`persona`（人设 id）、`agents`（只对这些 magpie agent 生效，如 `["claude","codex"]`）。
+
+**边界**：改的是请求体里的文本，harness 在客户端就拼死的东西拦不住；`replace` 只删「一行里同时有自称和点名模型/厂商」的行，比 CLI 那套 per-harness 处理粗。插件页是沙箱（没有 fetch、读不到磁盘），人设清单由 `gen-personas.mjs` 按你本机的人设生成到本地（不进仓库），**装完先跑一次**，之后增删人设再跑：`node magpie-plugin/gen-personas.mjs`。自测不依赖 magpie：`npm test`（钩子 26 项断言：四种协议 × 四种模式；页面逻辑 18 项：搜索过滤、options 合并、失败回滚）。
+
 ## 目录
 
 ```
@@ -64,6 +92,7 @@ lib/         状态、persona、注入、通道、检测
 backends/    每个 harness 的启动参数与身份句处理
 web/         控制台（server.mjs + ui.html）
 bench/       注入成功率实测与裁判脚本（开发用，不参与运行）
+magpie-plugin/  magpie 网关插件（可选，不进 npm 包）
 matrix.json  能力矩阵
 ```
 
