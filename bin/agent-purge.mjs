@@ -309,22 +309,27 @@ function modeCmd() {
 async function installCmd(verb, rest) {
 	const id = rest[0];
 	const ids = id === "--all" || !id ? Object.keys(matrix.harnesses).filter((h) => matrix.harnesses[h].class !== "unsupported") : [id];
-	const { backends: be } = await import("../backends/index.mjs");
+	// 常驻只走 lib/persist.mjs 这一个控制面（caps / Web 开关 / status 都读它的 targets）
+	const { install, uninstall, targets } = await import("../lib/persist.mjs");
+	const { createStore } = await import("../lib/personas.mjs");
+	const store = createStore(DATA);
 	for (const h of ids) {
-		const b = be[h];
-		if (!b) die(`未知 harness: ${h}`);
-		const fn = verb === "install" ? b.install : b.uninstall;
-		if (!fn) {
+		if (!matrix.harnesses[h]) die(`未知 harness: ${h}`);
+		if (!targets[h]) {
 			console.log(`${h}: 没有常驻模式（用 arm 走裸命令接管 / slash 走会话内）`);
 			continue;
 		}
-		const spec = matrix.harnesses[h];
-		const { createStore } = await import("../lib/personas.mjs");
-		const store = createStore(DATA);
-		const pid = store.activeId();
-		const r = fn({ personaPath: store.materialize(pid), personaText: store.read(pid).body.trim(), root: DATA, reason: spec.reason }) ?? {};
-		const ok = verb === "install" ? r.ok !== false : r.ok !== false;
-		console.log(`${ok ? "✓" : "✗"} ${verb} ${h}${r.file ? ` → ${r.file}` : ""}${r.note ? `  (${r.note})` : ""}`);
+		let r;
+		if (verb === "install") {
+			const pid = store.activeId();
+			if (!pid) die("还没有 persona：先 agent-purge use <id>");
+			r = install(h, { root: DATA, active: store.refreshActive() }) ?? {};
+		} else {
+			// 卸载不能依赖 persona 还在：人设删了也必须能关
+			r = uninstall(h) ?? {};
+		}
+		const ok = !r.error;
+		console.log(`${ok ? "✓" : "✗"} ${verb} ${h}${r.file ? ` → ${r.file}` : ""}${r.note ? `  (${r.note})` : ""}${r.error ? `  ${r.error}` : ""}`);
 		if (ok) setArmed(DATA, h, "install", verb === "install");
 	}
 }
@@ -426,7 +431,9 @@ async function armCmd(verb, rest) {
 				lines.push(
 					h0 === "pi"
 						? "裸敲 pi 不注入（只装了热切）；会话里打 /purge on 才改写，/purge status 看状态"
-						: "会话里打 /purge 才注入（它展开成用户消息）",
+						: h0 === "dsh"
+							? "dsh 会话里打 /purge 切开关（改 state.json，不产生模型消息）；三形态共用一份状态"
+							: "会话里打 /purge 才注入（它展开成用户消息）",
 				);
 			}
 			if (channels.includes("install")) lines.push("改了配置文件：连别人启动的、GUI 里点开的也生效（那家重启后生效）");
@@ -716,11 +723,12 @@ function help() {
 通道语义
    shim     在 PATH 最前放同名 cmd，裸敲即经 agent-purge 启动（sys 层注入）
    install  改 harness 自己的配置/插件文件（连别人启动的它也会带人设）
-   slash    会话里打 /purge 换提示词：**只有 pi 能做**（扩展在 before_agent_start 重写 systemPrompt，真 sys 层、热切换）
-         其他家没有这个能力：/purge 展开成用户消息，bench 实测 0/2 无效，所以不提供
+slash    会话里打 /purge 换提示词：**pi 和 dsh 都能做**（pi 的扩展钩子 / dsh 的 cordis 插件，真 sys 层、热切换）
+其他家没有这个能力：/purge 展开成用户消息，bench 实测 0/2 无效，所以不提供
    注入强度：只有 sys 层算。user 层（上下文块/用户消息）在 codex/claude/opencode/grok/hermes 实测都是 0/2，一律不提供。
 
-harness: pi, opencode, codex, claude, grok, omp, hermes, zcode, antigravity, qoder, workbuddy, codebuddy
+harness: pi, opencode, opencode2, dsh, codex, claude, grok, omp, hermes, zcode, antigravity, qoder, workbuddy, codebuddy
+          opencode2 = @opencode/cli 2.x（v2 插件 API），dsh = DeepSeek Harness（cordis 插件，desktop/web/headless 三形态）。
          qoder / workbuddy 无 prompt 组装入口（提示词在服务端），只能改上下文规则文件。
 `);
 }

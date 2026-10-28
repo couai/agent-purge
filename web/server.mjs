@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { detect } from "../lib/detect.mjs";
 import { oneshots } from "../backends/index.mjs";
 import { createStore } from "../lib/personas.mjs";
-import { MODES, armedOf, loadState, patchState, setArmed, setDefault, setPersona, setPiAuto } from "../lib/state.mjs";
+import { MODES, armedOf, dshProfilesOf, loadState, patchState, setArmed, setDefault, setPersona, setPiAuto, setDshProfile } from "../lib/state.mjs";
 import { install, status as persistStatus, uninstall } from "../lib/persist.mjs";
 import { plans, summary as armorSummary } from "../lib/armor.mjs";
 import { installShim, shimStatus, uninstallShim } from "../lib/shim.mjs";
@@ -14,6 +14,7 @@ import { installSlash, refreshSlashes, slashStatus, uninstallSlash } from "../li
 import { reconcileArmed } from "../lib/armed.mjs";
 import { capsFor } from "../lib/caps.mjs";
 import { ensureDataHome } from "../lib/home.mjs";
+import { DSH_PROFILES } from "../lib/dsh.mjs";
 
 const ROOT = process.versions.bun ? dirname(process.execPath) : dirname(dirname(fileURLToPath(import.meta.url)));
 // 数据（state.json + personas/）在用户目录，不在安装目录
@@ -55,6 +56,7 @@ async function handle(req, res) {
 	if (req.method === "GET" && p === "/api/armor") return send(res, 200, armorState());
 	if (req.method === "POST" && p === "/api/defaults") return send(res, 200, saveDefaults(await body(req)));
 	if (req.method === "POST" && p === "/api/pi-auto") return send(res, 200, { piAuto: setPiAuto(DATA, (await body(req)).on === true) });
+	if (req.method === "POST" && p === "/api/dsh-profile") return send(res, 200, saveDshProfile(await body(req)));
 	if (req.method === "POST" && p === "/api/persona") return send(res, 200, savePersona(await body(req)));
 	if (req.method === "DELETE" && p === "/api/persona") return send(res, 200, deletePersona(url.searchParams.get("id")));
 	if (req.method === "POST" && p === "/api/use") return send(res, 200, usePersona(await body(req)));
@@ -137,6 +139,9 @@ async function state(withVersions) {
 		// false = state.json 里还没有默认（defaults 只是 UI 的建议值，裸敲 agent-purge 仍会提示“未设置”）
 		defaultsSet: Boolean(st.default?.harness),
 		armed: st.armed ?? {},
+		// dsh 的三个 profile（desktop/web/headless）；null 就是全开
+		dshProfiles: dshProfilesOf(st) ?? DSH_PROFILES,
+		dshAll: DSH_PROFILES,
 		modes: MODES,
 		piAuto: st.piAuto === true,
 		shimDir: shimStatus()[0]?.dir ?? null,
@@ -168,6 +173,16 @@ function saveDefaults(payload) {
 	if (mode && !MODES.includes(mode)) return { error: `mode 只能是 ${MODES.join(" / ")}` };
 	try {
 		return { ok: true, defaults: setDefault(DATA, { harness, mode: mode ?? "replace" }) };
+	} catch (e) {
+		return { error: e.message };
+	}
+}
+
+function saveDshProfile(payload) {
+	const profile = String(payload.profile || "").trim();
+	if (!DSH_PROFILES.includes(profile)) return { error: `未知 profile: ${profile}（${DSH_PROFILES.join(" / ")}）` };
+	try {
+		return { ok: true, dshProfiles: setDshProfile(DATA, profile, payload.on === true, DSH_PROFILES) };
 	} catch (e) {
 		return { error: e.message };
 	}

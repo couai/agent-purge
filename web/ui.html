@@ -260,6 +260,11 @@ h3{margin:0 0 10px;font-family:var(--font-display);font-size:16px;font-weight:60
 white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}
 .chan.on{border-color:var(--accent);background:var(--accent-soft)}
 .chan.on .dot{background:var(--accent)}
+.dprof{display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap}
+.dprof-k{font-size:11.5px;color:var(--ink-2);letter-spacing:.02em}
+.chan.mini{padding:7px 11px;align-items:center;gap:7px}
+.chan.mini .dot{margin-top:0}
+.chan.mini b{font-size:12px;font-weight:600}
 .chan.on b u{color:var(--accent);border-color:var(--accent-line)}
 .chan.dis{opacity:.62;cursor:not-allowed}
 /* 结构性做不到（不是“没开”）：虚线 + 不跟手，和“关了”区分开 */
@@ -820,6 +825,19 @@ function harnessCard(h) {
 
   const noChannel = h.caps ? !(h.caps.shim.ok || h.caps.install.ok || h.caps.slash.ok) : false;
 
+  // dsh 的 desktop / web / headless 是三个独立 profile，插件分别装在三处；
+  // 这里只改 state.json，插件每次 assemble 现读，下一轮就生效，不用重启。
+  const dshList = S.dshAll || ["desktop", "web", "headless"];
+  const profileRow = h.id === "dsh"
+    ? `<div class="dprof">
+        <span class="dprof-k">生效形态 <i class="hint" title="dsh 三个形态各用一个 profile 目录，插件装在三处。勾选只改 state.json 的 dshProfiles，下一轮即生效">?</i></span>
+        ${dshList.map((p) => {
+          const on = (S.dshProfiles || []).includes(p);
+          return `<button class="chan mini ${on ? "on" : ""}" data-dshprofile="${esc(p)}" data-on="${on ? "off" : "on"}" type="button"><span class="dot"></span><span><b>${esc(p)}</b></span></button>`;
+        }).join("")}
+      </div>`
+    : "";
+
   return `<div class="hc ${h.found ? "" : "dead"}">
     <div class="hhead">
       <span class="hname"><span class="st ${h.armed && h.armed.length ? "on" : ""}"></span>${esc(h.id)}</span>
@@ -839,6 +857,7 @@ function harnessCard(h) {
     </div>
     ${notes.length ? `<div class="hnote">${notes.map(esc).join("<br>")}</div>` : ""}
     <div class="chans">${chans}</div>
+    ${profileRow}
   </div>`;
 }
 function recommendMode(h) {
@@ -1051,6 +1070,19 @@ $("#selbar").addEventListener("click", async (e) => {
   });
 });
 async function onChan(e) {
+  // dsh 的三个形态：勾/取消只改 state.json，不动磁盘，所以是即时可逆的
+  const pb = e.target.closest("[data-dshprofile]");
+  if (pb) {
+    const profile = pb.dataset.dshprofile;
+    const on = pb.dataset.on === "on";
+    try {
+      await api("/api/dsh-profile", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ profile, on }) });
+      toast(`dsh · ${profile} ${on ? "已开" : "已关"}`);
+      await load();
+    } catch (err) { toast("失败：" + err.message, true); }
+    return;
+  }
   const b = e.target.closest("[data-chan]"); if (!b) return;
   const { chan, h } = b.dataset;
   const on = S.harnesses.find((x) => x.id === h)?.armed?.includes(chan);

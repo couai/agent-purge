@@ -1,5 +1,9 @@
 # agent-purge
 
+[![npm](https://img.shields.io/npm/v/agent-purge)](https://www.npmjs.com/package/agent-purge)
+[![stars](https://img.shields.io/github/stars/ZiChuanLan/agent-purge)](https://github.com/ZiChuanLan/agent-purge/stargazers)
+[![license](https://img.shields.io/npm/l/agent-purge)](LICENSE)
+
 一份系统提示词，喂给多个 coding agent。支持替换（replace）、只发人设（strict）、追加（append）、清空（off）四种模式，可热切换，全程可逆。
 
 ```
@@ -52,9 +56,38 @@ agent-purge pi --persona <id>  # 只这一轮用别的
 
 ## 支持情况
 
+每个数字都是实测值：本地假 provider 抓真实请求体，不是估算。
+
+| harness | 机制 | 实测版本 | 默认 system | 注入后 |
+|---|---|---|---|---|
+| `codex` | 启动参数 `-c model_instructions_file=` | 0.163.0 | 21,026 | 24 |
+| `claude` | `--system-prompt-file` + 二进制补丁清残留身份句 | 2.1.304 | 6,379 | 156 |
+| `grok` | `--system-prompt-override` | 1.0.62 | 5,146 | 21 |
+| `omp` | `--system-prompt` | 17.4.2 | 34,511 | 10,106 |
+| `hermes` | 临时 HOME 里替换 `SOUL.md` | 0.21.5 | 8,139 | 7,554 |
+| `zcode` | UserPromptSubmit hook（user 角色）+ `customSystemPrompt` | 0.16.9 | 9,359 | 9,359 |
+| `opencode` | cwd 下 `.opencode/plugin/*.ts` 原地改 `output.system` | 1.19.3 | 19,332 | 112 |
+| `opencode2` | `plugins/agent-purge-v2.ts` 的 `ctx.session.hook("context")` | 0.0.0-beta-17823 | 8,279 | 3,189 |
+| `dsh` | cordis 插件（三个 profile 各一份） | 0.2.1-rc.2 | 5,713 | 68 |
+| `pi` | 原生扩展，会话内 `/purge` | — | — | — |
+| `antigravity` | 等长替换二进制里的身份句 | 1.23.x | ≈20,498 | — |
+| `codebuddy` | `--system-prompt-file` | 2.171.0 | — | — |
+| `qoder` / `workbuddy` | 不支持（提示词在服务端） | — | — | — |
+
+`opencode` 和 `opencode2` 是两个不同的 npm 包（`opencode-ai` 1.x 与 `@opencode/cli` 2.x），插件接口完全不同，各自独立支持。
+
 `agent-purge ls` 和 Web 控制台显示的是**运行期真值**：每个 harness 有没有装、版本、注入层（SYS / USER）、三个通道各自可用性。`matrix.json` 里是静态能力表，两者冲突时以运行期为准。
 
 闭源桌面端（提示词在服务端或二进制里）只做原样启动，不做任何注入——`agent-purge <h>` 会明确打印原因，不会假装生效。
+
+### 常驻安装（install）
+
+```bash
+agent-purge install <h>      # 写进该 harness 自己的托管位置，别人启动也生效
+agent-purge uninstall <h>    # 摘掉，按字节还原
+```
+
+dsh 是唯一有多个形态的：desktop / web / headless 共用一套 cordis 插件，装在各自 profile 的 `node_modules/agent-purge/`，并在 `cordis.patch.yml` 里 `- insert` 挂上，不改 `app.asar`。装完重启一次，之后热生效；三个形态还能在 Web 面板分别勾选。
 
 ## magpie 网关插件（可选）
 
@@ -100,6 +133,7 @@ matrix.json  能力矩阵
 
 - 只改提示词相关的位置，不碰二进制、不破解、不绕过任何授权。
 - 所有改动可逆：`agent-purge uninstall <h>` / `disarm` / `--mode off`。
+- 不做文件夹级人设隔离：技术上做得到，但会打破「一份人设、所有入口、一起切换」，卸载也不再是字节还原。
 - 状态只存本机 `state.json`，不上传任何数据。
 
 ## 免责与合规声明
@@ -141,6 +175,10 @@ matrix.json  能力矩阵
 **第三方独立性声明**：本项目属于完全独立的开源安全评测研究项目，与 pi 官方或其关联主体无任何隶属、商业合作、授权或官方背书关系。文中「官方」仅指评测对象为使用者本机安装的官方 harness 软件包，不代表其官方开发、认可或担保本插件。
 
 **必须署名**：借用本项目的名称、思路、代码或提示词，必须署名并标明本仓库。不署名将依法追究责任。
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=ZiChuanLan/agent-purge&type=Date)](https://star-history.com/#ZiChuanLan/agent-purge&Date)
+
 ## License
 
 MIT

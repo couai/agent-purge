@@ -14,3 +14,6 @@ web/_out.log
 
 # 验证产物（浏览器 dump / 断言输出）
 out/
+
+# Playwright MCP 产物
+.playwright-mcp/

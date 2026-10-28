@@ -2,6 +2,8 @@
 // setup/cleanup 由入口统一调用，保证能按哈希回滚。
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { SESSION as DSH_SESSION, addPlugin, removePlugin, sessionSource } from "../lib/dsh.mjs";
+import { opencodePlugins } from "../lib/persist.mjs";
 
 const inline = (text) => text.replace(/\s+$/, "");
 
@@ -86,6 +88,57 @@ export const backends = {
 		};
 	},
 
+	// dsh（DeepSeek Harness）：CLI 只能起 headless（desktop 被 Electron 独占）。
+	// 一次性注入用 agent-purge-session 这个独立插件名，不会覆盖常驻的 agent-purge。
+	dsh: ({ personaText, mode, args }) => {
+		if (mode === "off") return { cmd: "dsh", args: ["--profile", "headless", ...args] };
+		return {
+			cmd: "dsh",
+			args: ["--profile", "headless", ...args],
+			note: `[plugin] ${DSH_SESSION}（三个 profile；patch: - insert）`,
+			residueHint: "desktop profile 由 Electron 独占，一次性注入只对本次 CLI 进程有效",
+			setup: () => addPlugin(DSH_SESSION, sessionSource(personaText, mode)),
+			cleanup: () => removePlugin(DSH_SESSION),
+		};
+	},
+
+	// opencode v2（@opencode/cli，bin 名 opencode2）：新插件 API，V1 的
+	// experimental.chat.system.transform 在 2.x 已废。插件放全局 plugins 目录。
+	opencode2: ({ personaText, mode, args }) => {
+		if (mode === "off") return { cmd: "opencode2", args: [...args] };
+		const dir = opencodePlugins();
+		// 与 V1 常驻插件（agent-purge.ts）分开，否则一次性注入会顶掉常驻接管
+		const file = join(dir, "agent-purge-v2-session.ts");
+		const persona = inline(personaText);
+		const mutate =
+			mode === "append"
+				? `event.system.push({ type: "text", text: PERSONA });`
+				: `event.system.splice(0, event.system.length, { type: "text", text: PERSONA });`;
+		const src = `// 由 agent-purge 生成；删除本文件即恢复宿主人设。
+const PERSONA = ${JSON.stringify(persona)};
+
+	export default {
+  id: "agent-purge-v2-session",
+  async setup(ctx) {
+    await ctx.session.hook("context", (event) => {
+      ${mutate}
+    });
+  },
+};
+`;
+		const write = () => {
+			mkdirSync(dir, { recursive: true });
+			writeFileSync(file, src);
+		};
+		return {
+			cmd: "opencode2",
+			args,
+			note: `[plugin] ${file.replace(/\\/g, "/")}（ctx.session.hook("context") 改 event.system）`,
+			setup: write,
+			cleanup: () => rmSync(file, { force: true }),
+		};
+	},
+
 	// 需要落盘或调用方配合，CLI 不代劳，只给可复制的配方
 	zcode: () => ({
 		manual: [
@@ -152,6 +205,16 @@ export const oneshots = {
 		if (mode === "off") return { cmd: "opencode", args: ["run", prompt] };
 		const b = backends.opencode({ personaText, cwd, args: ["run", prompt] });
 		return b;
+	},
+	opencode2: ({ prompt, personaText, mode }) => {
+		if (mode === "off") return { cmd: "opencode2", args: ["run", prompt] };
+		const b = backends.opencode2({ personaText, mode, args: ["run", prompt] });
+		return b;
+	},
+	dsh: ({ prompt, personaText, mode }) => {
+		if (mode === "off") return { cmd: "dsh", args: ["--profile", "headless", prompt] };
+		// backends.dsh 会自己补 --profile headless，这里只给 prompt（否则重复）
+		return backends.dsh({ personaText, mode, args: [prompt] });
 	},
 	zcode: ({ prompt }) => ({
 		cmd: "zcode",

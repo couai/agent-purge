@@ -2,6 +2,30 @@
 	"note": "每个数字都来自 agent-purge 的方法：本地假 provider 抓请求，或 harness 自带日志。更新时改这里，不要改 README 表格。",
 	"personasDir": "personas",
 	"harnesses": {
+		"dsh": {
+			"class": "plugin",
+			"override": true,
+			"inject": true,
+			"hotSwitch": true,
+			"patch": false,
+			"launcher": "dsh（三个 profile 各放 node_modules/agent-purge 插件，cordis.patch.yml 里 - insert 挂载；不碰 app.asar）",
+			"defaultSystemChars": 5713,
+			"purgedSystemChars": 68,
+			"measuredVersion": "0.2.1-rc.2",
+			"verify": "本地假 provider 抓请求体：headless / desktop / web 三形态各验一遍，插件 canary 进 system（本机走 developer 角色）"
+		},
+		"opencode2": {
+			"class": "plugin",
+			"override": true,
+			"inject": true,
+			"hotSwitch": true,
+			"patch": false,
+			"launcher": "opencode2（~/.config/opencode/plugins/agent-purge-v2.ts，ctx.session.hook(\"context\") 改 event.system）",
+			"defaultSystemChars": 8279,
+			"purgedSystemChars": 3189,
+			"measuredVersion": "0.0.0-beta-17823",
+			"verify": "本地假 provider 抓请求体：canary 进 role=system 消息（--print-logs 可看到 v2 插件加载）"
+		},
 		"pi": {
 			"class": "native-extension",
 			"override": true,
