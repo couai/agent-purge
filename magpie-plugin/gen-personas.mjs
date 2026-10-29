@@ -1,12 +1,18 @@
 // 生成 page/personas.js：插件页读不到磁盘也不能 fetch，人设清单只能静态带进去。
 //   node magpie-plugin/gen-personas.mjs     （增删人设后重跑一次）
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
 const env = process.env.AGENT_PURGE_HOME?.trim();
 const home = !env ? join(homedir(), ".agent-purge") : isAbsolute(env) ? env : resolve(env);
 const dir = join(home, "personas");
+
+if (!existsSync(dir)) {
+	console.error(`找不到人设目录：${dir}${env ? `\nAGENT_PURGE_HOME=${env}` : ""}`);
+	console.error("先运行一次 agent-purge web（或 agent-purge ls）生成 personas；如果路径不对，检查 AGENT_PURGE_HOME 的写法。");
+	process.exit(1);
+}
 
 const field = (fm, k) =>
 	fm

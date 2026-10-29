@@ -32,6 +32,16 @@ npm i -g agent-purge     # 或 npx agent-purge web
 
 要求 Node ≥ 20，零依赖。
 
+**用 magpie 网关？** 插件不在 npm 包里，在仓库的 `magpie-plugin/` 子目录——不要指向仓库根（根 `package.json` 是 CLI，只有 `bin`，magpie 会拒绝）：
+
+```bash
+magpie plugin add /path/to/agent-purge/magpie-plugin
+```
+
+首次使用先跑一次 `agent-purge web`（打开 http://127.0.0.1:7788 的控制台，先看/选一个人设；不想开界面就用 `agent-purge ls`），它会生成 `~/.agent-purge/personas/`；再跑 `node magpie-plugin/gen-personas.mjs` 生成 Persona 页的人设清单。
+
+详见下文「magpie 网关插件（可选）」。
+
 **数据独立存放**，升级不会被覆盖：默认 `~/.agent-purge/`（Windows `C:\Users\<你>\.agent-purge\`），里面是 `state.json` 和 `personas/`。想换位置就设环境变量：
 
 ```bash
@@ -115,7 +125,7 @@ magpie plugin list                                      # 应看到 async gatewa
 
 options 三键：`mode`、`persona`（人设 id）、`agents`（只对这些 magpie agent 生效，如 `["claude","codex"]`）。
 
-**边界**：改的是请求体里的文本，harness 在客户端就拼死的东西拦不住；`replace` 只删「一行里同时有自称和点名模型/厂商」的行，比 CLI 那套 per-harness 处理粗。插件页是沙箱（没有 fetch、读不到磁盘），人设清单由 `gen-personas.mjs` 按你本机的人设生成到本地（不进仓库），**装完先跑一次**，之后增删人设再跑：`node magpie-plugin/gen-personas.mjs`。自测不依赖 magpie：`npm test`（钩子 26 项断言：四种协议 × 四种模式；页面逻辑 18 项：搜索过滤、options 合并、失败回滚）。
+**边界**：改的是请求体里的文本，harness 在客户端就拼死的东西拦不住；`replace` 只删「一行里同时有自称和点名模型/厂商」的行，比 CLI 那套 per-harness 处理粗。插件页是沙箱（没有 fetch、读不到磁盘），人设清单由 `gen-personas.mjs` 按你本机的人设生成到本地（不进仓库），**装完先跑一次**，之后增删人设再跑：`node magpie-plugin/gen-personas.mjs`。前提是已经运行过 `agent-purge`（如 `agent-purge web` 或 `agent-purge ls`），`~/.agent-purge/personas/` 里有 persona；目录不存在时脚本会直接提示。自测不依赖 magpie：`npm test`（钩子 26 项断言：四种协议 × 四种模式；页面逻辑 18 项：搜索过滤、options 合并、失败回滚）。
 
 ## 目录
 
