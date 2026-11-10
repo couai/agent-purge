@@ -89,7 +89,7 @@ def sync():
     latest = (optional(f"repos/{source}/releases/latest") or {}).get("tag_name")
     target_latest = (optional(f"repos/{target}/releases/latest") or {}).get("tag_name")
     totals = {"releases_checked": 0, "releases_created": 0, "releases_updated": 0,
-              "tags_created": 0, "assets_uploaded": 0, "asset_labels_updated": 0}
+              "tags_checked": 0, "assets_uploaded": 0, "asset_labels_updated": 0}
 
     # Oldest first, preserving the upstream's explicitly selected latest release.
     for release in sorted(releases, key=lambda r: r["published_at"]):
@@ -98,14 +98,11 @@ def sync():
         tag_path = "git/ref/tags/" + quote(tag, safe="")
         source_ref = api(f"repos/{source}/{tag_path}")
         target_ref = optional(f"repos/{target}/{tag_path}")
+        totals["tags_checked"] += 1
         if target_ref and target_ref["object"]["sha"] != source_ref["object"]["sha"]:
             raise RuntimeError(f"Tag {tag} differs from upstream; retained the existing target tag")
-        if not target_ref:
-            if not dry_run:
-                api(f"repos/{target}/git/refs", "POST", {
-                    "ref": "refs/tags/" + tag, "sha": source_ref["object"]["sha"],
-                })
-            totals["tags_created"] += 1
+        if not target_ref and not dry_run:
+            raise RuntimeError(f"Missing tag {tag}; the code/tag sync job must run first")
 
         metadata = {"tag_name": tag, "name": release.get("name") or "",
                     "body": release.get("body") or "", "prerelease": release["prerelease"]}

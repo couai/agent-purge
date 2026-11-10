@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Merge upstream main and verify
+      - name: Sync upstream tags and merge main
         env:
           UPSTREAM_REPOSITORY: ZiChuanLan/agent-purge
           SYNC_SSH_KEY: ${{ secrets.UPSTREAM_SYNC_SSH_KEY }}
@@ -53,6 +53,15 @@ jobs:
           git fetch --quiet --no-tags upstream refs/heads/main
           upstream_sha="$(git rev-parse FETCH_HEAD)"
 
+          # Preserve annotated tags with the deploy key, including old workflow revisions.
+          git fetch --quiet --no-tags upstream 'refs/tags/*:refs/tags/*'
+          if [[ "$DRY_RUN" != "true" ]]; then
+            git push origin --tags
+            echo "Upstream tags synchronized." | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Dry run: tag pushes skipped." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
           if git merge-base --is-ancestor "$upstream_sha" HEAD; then
             echo "Already contains upstream commit $upstream_sha." | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
@@ -76,6 +85,7 @@ jobs:
           echo "Synced and verified $pending upstream commits." | tee -a "$GITHUB_STEP_SUMMARY"
 
   releases:
+    needs: sync
     if: github.repository == 'couai/agent-purge' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
