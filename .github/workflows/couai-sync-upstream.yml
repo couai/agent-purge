@@ -2,7 +2,7 @@ name: Sync upstream
 
 "on":
   schedule:
-    - cron: '17 1 * * *' # 09:17 Asia/Shanghai
+    - cron: '17 1 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -11,7 +11,7 @@ name: Sync upstream
         default: false
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: sync-upstream-${{ github.repository }}
@@ -19,130 +19,59 @@ concurrency:
 
 jobs:
   sync:
-    if: github.repository_owner == 'couai' && github.ref_name == github.event.repository.default_branch
+    if: github.repository == 'couai/agent-purge' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Merge upstream default branch and verify
+      - name: Merge upstream main and verify
         env:
-          GH_TOKEN: ${{ github.token }}
-          TARGET_REPOSITORY: ${{ github.repository }}
-          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          UPSTREAM_REPOSITORY: ZiChuanLan/agent-purge
+          SYNC_SSH_KEY: ${{ secrets.UPSTREAM_SYNC_SSH_KEY }}
+          DRY_RUN: ${{ inputs.dry_run || false }}
         shell: bash
         run: |
-          python3 - <<'PYTHON'
-          """Sync one fork's default branch without checking out or executing repository code."""
+          set -euo pipefail
 
-          import json
-          import os
-          from pathlib import Path
-          import sys
-          from urllib.error import HTTPError
-          from urllib.parse import quote
-          from urllib.request import Request, urlopen
+          # A repository-scoped deploy key also permits upstream workflow updates.
+          ssh_dir="$RUNNER_TEMP/upstream-sync-ssh"
+          mkdir -p "$ssh_dir"
+          chmod 700 "$ssh_dir"
+          trap 'rm -rf "$ssh_dir"' EXIT
+          test -n "$SYNC_SSH_KEY"
+          printf '%s\n' "$SYNC_SSH_KEY" > "$ssh_dir/key"
+          chmod 600 "$ssh_dir/key"
+          # GitHub's published Ed25519 host key; keep host verification enabled.
+          printf '%s\n' 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > "$ssh_dir/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $ssh_dir/key -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$ssh_dir/known_hosts"
 
+          git init --quiet "$RUNNER_TEMP/upstream-sync-repo"
+          cd "$RUNNER_TEMP/upstream-sync-repo"
+          git remote add origin "git@github.com:$GITHUB_REPOSITORY.git"
+          git remote add upstream "https://github.com/$UPSTREAM_REPOSITORY.git"
+          git fetch --quiet --no-tags origin refs/heads/main
+          git checkout --quiet -b main FETCH_HEAD
+          git fetch --quiet --no-tags upstream refs/heads/main
+          upstream_sha="$(git rev-parse FETCH_HEAD)"
 
-          class ApiError(Exception):
-              def __init__(self, status, message):
-                  self.status = status
-                  super().__init__(message)
+          if git merge-base --is-ancestor "$upstream_sha" HEAD; then
+            echo "Already contains upstream commit $upstream_sha." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
 
+          pending="$(git rev-list --count "HEAD..$upstream_sha")"
+          echo "Upstream: $UPSTREAM_REPOSITORY @ $upstream_sha; pending commits: $pending." | tee -a "$GITHUB_STEP_SUMMARY"
+          if [[ "$DRY_RUN" == "true" ]]; then
+            echo "Dry run: no changes pushed." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
 
-          def request_api(path, data=None):
-              request = Request(
-                  "https://api.github.com/" + path,
-                  data=json.dumps(data).encode() if data is not None else None,
-                  headers={
-                      "Authorization": "Bearer " + os.environ["GH_TOKEN"],
-                      "Accept": "application/vnd.github+json",
-                      "X-GitHub-Api-Version": "2022-11-28",
-                  },
-              )
-              try:
-                  with urlopen(request, timeout=45) as response:
-                      body = response.read()
-                      return json.loads(body) if body else None
-              except HTTPError as error:
-                  body = error.read().decode("utf-8", "replace")
-                  try:
-                      message = json.loads(body).get("message", body)
-                  except json.JSONDecodeError:
-                      message = body
-                  raise ApiError(error.code, f"HTTP {error.code} at {path}: {message}") from None
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # Keep fork commits; conflicts fail the job before any push.
+          # Skip inherited push-triggered builds for synchronization-only commits.
+          git merge --no-ff --no-edit -m "chore: sync upstream $UPSTREAM_REPOSITORY [skip ci]" "$upstream_sha"
+          git push origin HEAD:refs/heads/main
+          git fetch --quiet --no-tags origin refs/heads/main
+          git merge-base --is-ancestor "$upstream_sha" FETCH_HEAD
+          echo "Synced and verified $pending upstream commits." | tee -a "$GITHUB_STEP_SUMMARY"
 
-
-          def sync(api, repository, dry_run=False):
-              repo = api(f"repos/{repository}")
-              if not repo.get("fork") or not repo.get("parent"):
-                  raise RuntimeError("The target repository is no longer a fork")
-              branch = repo["default_branch"]
-              parent = repo["parent"]
-              upstream = parent["full_name"]
-              source_branch = parent["default_branch"]
-              target_ref = f"repos/{repository}/git/ref/heads/{quote(branch, safe='')}"
-              source_ref = f"repos/{upstream}/git/ref/heads/{quote(source_branch, safe='')}"
-              old_sha = api(target_ref)["object"]["sha"]
-              source_sha = api(source_ref)["object"]["sha"]
-              report = {
-                  "repository": repository,
-                  "branch": branch,
-                  "upstream": upstream,
-                  "upstream_branch": source_branch,
-                  "upstream_sha": source_sha,
-                  "previous_sha": old_sha,
-              }
-              if old_sha == source_sha:
-                  return dict(report, status="up_to_date", ahead_by=0, behind_by=0)
-              try:
-                  source_label = quote(upstream.split('/')[0] + ':' + source_branch, safe='')
-                  comparison = api(f"repos/{repository}/compare/{source_label}...{old_sha}")
-              except ApiError as error:
-                  if error.status == 404 and "no common ancestor" in str(error).lower():
-                      return dict(report, status="blocked", reason="No common ancestor; manual history reconciliation required")
-                  raise
-              source_sha = comparison["base_commit"]["sha"]
-              report.update(upstream_sha=source_sha, ahead_by=comparison["ahead_by"], behind_by=comparison["behind_by"])
-              if comparison["behind_by"] == 0:
-                  return dict(report, status="up_to_date")
-              if dry_run:
-                  return dict(report, status="would_merge")
-              try:
-                  api(f"repos/{repository}/merges", {
-                      "base": branch,
-                      "head": source_sha,
-                      "commit_message": f"chore: sync upstream {upstream}:{source_branch}",
-                  })
-              except ApiError as error:
-                  if error.status == 409:
-                      return dict(report, status="blocked", reason="Merge conflict; existing branch retained")
-                  raise
-              new_sha = api(target_ref)["object"]["sha"]
-              verified = api(f"repos/{repository}/compare/{source_sha}...{new_sha}")
-              if verified["behind_by"] != 0:
-                  raise RuntimeError("Verification failed: the target does not contain the upstream commit")
-              return dict(report, status="synced", result_sha=new_sha)
-
-
-          def main():
-              try:
-                  report = sync(request_api, os.environ["TARGET_REPOSITORY"],
-                                os.environ.get("DRY_RUN", "false").lower() == "true")
-                  failed = False
-              except Exception as error:
-                  report = {"status": "failed", "reason": str(error)}
-                  failed = True
-              rendered = json.dumps(report, ensure_ascii=False, indent=2)
-              print(rendered)
-              if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
-                  with Path(summary).open("a") as file:
-                      file.write("## Upstream sync: " + report["status"] + "\n\n```json\n" + rendered + "\n```\n")
-              if report["status"] in {"blocked", "failed"}:
-                  level = "error" if failed else "warning"
-                  reason = report["reason"].replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-                  print(f"::{level}::{reason}")
-              return int(failed)
-
-
-          if __name__ == "__main__":
-              sys.exit(main())
-          PYTHON
