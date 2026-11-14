@@ -457,6 +457,17 @@ async function state(withVersions, ctx = {}) {
 			preferredMode: m.preferredMode ?? null,
 			reason: m.reason ?? null,
 			supported: m.class !== "unsupported",
+			// 实测的内置护栏数：off = 未注入时，purged = 注入后。null = 没抓包，UI 不画
+			safety: m.safety ?? null,
+			// 净化范围：entire-system / identity-only / append。UI 靠它区分「身份真没了」和「只是追加」
+			replaceScope: m.replaceScope ?? null,
+			// 净化方式：unverified = 没确定能不能接管，UI 灰掉标「未来支持」，不许画成「可接管」
+			purgeKind: m.purgeKind ?? null,
+			// 未来支持：还没确定能不能接管（kiro 没测到、goose 只能追加）。UI 灰掉，不画成「可接管」
+			planned: Boolean(m.planned),
+			plannedNote: m.plannedNote ?? null,
+			// 净化方式：unverified = 没确定能不能接管，UI 灰掉标「未来支持」，不许画成「可接管」
+			purgeKind: m.purgeKind ?? null,
 			oneshot: Boolean(oneshots[id]),
 			layer: LAYER[id] ?? (m.class === "unsupported" ? null : "sys"),
 			found: Boolean(d.found),
@@ -679,7 +690,7 @@ function projectView(input, { scope = "project", persona = null } = {}) {
 	return { scope: "project", dir, cwd: process.cwd(), targets, projects: projectOverview(DATA, dir), history, recent: recent.slice(0, 8), persona: personaId, activePersona: activeId, paused: loadState(DATA).state.default?.mode === "off" };
 }
 
-const RULES_ONLY = new Set(["cursor", "devin", "gemini", "copilot", "amp", "cline", "roo"]);
+const RULES_ONLY = new Set(["cursor", "devin", "copilot", "amp", "cline", "roo"]);
 
 function projectReaders(file) {
 	return Object.keys(projectTargets).filter(id => projectTargets[id] === file);
@@ -784,7 +795,7 @@ function settingsView(ctx = {}) {
 
 function saveSettingsView(payload, ctx = {}) {
 	if (!plainObject(payload)) throw httpError(400, "设置载荷应为对象");
-	const next = saveSettings(DATA, { language: payload.language, desktop: payload.desktop, webdav: payload.webdav });
+	const next = saveSettings(DATA, { language: payload.language, githubMirror: payload.githubMirror, desktop: payload.desktop, webdav: payload.webdav });
 	// 桌面形态下 exitPolicy 每次现读设置，所以改完立刻生效，不需要重启进程；
 	// 只有终端托管的服务不吃这条设置，如实说明。
 	return {
@@ -891,9 +902,13 @@ async function handleImportPersonas(payload) {
 	const source = String(payload?.source || "").trim();
 	if (!source) throw httpError(400, "导入源不能为空（请提供 GitHub 仓库如 ZiChuanLan/some-magic 或本地目录）");
 	const overwrite = payload?.overwrite !== false;
-	const { importPersonas } = await import("../lib/persona-import.mjs");
+	const hasMirror = plainObject(payload) && Object.hasOwn(payload, "mirror");
+	const { importPersonas, normalizeMirror } = await import("../lib/persona-import.mjs");
+	let mirror = "";
 	try {
-		const result = await importPersonas(source, DATA, { overwrite });
+		mirror = normalizeMirror(hasMirror ? payload.mirror : settingsOf(loadState(DATA).state).githubMirror);
+		if (hasMirror) saveSettings(DATA, { githubMirror: mirror });
+		const result = await importPersonas(source, DATA, { overwrite, mirror });
 		let applied = null;
 		if (payload?.activateId && getStore().read(payload.activateId)) {
 			applied = applyConfiguration(DATA, { persona: payload.activateId });
@@ -903,6 +918,7 @@ async function handleImportPersonas(payload) {
 			result,
 			personas: getStore().list().map((x) => ({ id: x.id, meta: x.meta, body: x.body, chars: x.body.trim().length })),
 			persona: getStore().activeId(),
+			settings: settingsOf(loadState(DATA).state),
 			applied,
 		};
 	} catch (e) {

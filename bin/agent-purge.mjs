@@ -391,8 +391,17 @@ async function launch(name) {
 	{
 		const c = capsFor(name);
 		if (!c.shim.ok && !c.install.ok && !c.slash.ok && mode !== "off") {
-			const why = [c.shim, c.install, c.slash].map((x) => x.why).filter(Boolean)[0];
-			console.log(`[提示] ${name} 注入不进去，本次是原样启动：${why}`);
+			// 点名启动（agent-purge <h>）也是真注入通道：它就是本次这次启动本身。
+			// 曾经漏判这条，导致 qwen/kimi/kiro 这些明明在注入的家被报成「注入不进去，原样启动」。
+			if (c.launch.ok) {
+				console.log(`[通道] 本次经点名启动注入：${c.launch.how ?? `agent-purge ${name}`}（不进 PATH、不改配置；只影响本次会话）`);
+			} else if (c.launch.backend) {
+				// 后端有注入实现、只是本机没有这个命令：这不是「注入不进去」，是「还没装」
+				console.log(`[通道] 这次会按 ${c.launch.how ?? `agent-purge ${name}`} 注入，但本机缺命令：${c.launch.why}`);
+			} else {
+				const why = [c.launch, c.shim, c.install, c.slash].map((x) => x.why).filter(Boolean)[0];
+				console.log(`[提示] ${name} 注入不进去，本次是原样启动：${why}`);
+			}
 		}
 	}
 
@@ -741,8 +750,15 @@ async function statusCmd() {
 }
 
 async function personaImportCmd(args = []) {
-	let sub = args[0];
-	let source = args[1];
+	const positional = [];
+	for (let i = 0; i < args.length; i++) {
+		const a = args[i];
+		if (a === "--mirror") { i++; continue; }
+		if (a.startsWith("--mirror=") || a === "--no-overwrite") continue;
+		positional.push(a);
+	}
+	let sub = positional[0];
+	let source = positional[1];
 	if (sub !== "pull" && sub !== "import") {
 		source = sub;
 		sub = "pull";
@@ -751,14 +767,31 @@ async function personaImportCmd(args = []) {
 		source = "ZiChuanLan/some-magic";
 	}
 	if (!source) {
-		die(L("用法：agent-purge pull [owner/repo 或 本地目录] 或 agent-purge persona import <dir>", "Usage: agent-purge pull [owner/repo | local-dir] or agent-purge persona import <dir>"));
+		die(L("用法：agent-purge pull [owner/repo 或 本地目录] [--mirror <url>] 或 agent-purge persona import <dir>", "Usage: agent-purge pull [owner/repo | local-dir] [--mirror <url>] or agent-purge persona import <dir>"));
 	}
 
 	const noOverwrite = argv.includes("--no-overwrite");
-	const { importPersonas } = await import("../lib/persona-import.mjs");
-	console.log(L(`正在从 ${source} 拉取人设...`, `Pulling personas from ${source}...`));
+	const hasMirrorFlag = controlArgs.includes("--mirror") || controlArgs.some((a) => a.startsWith("--mirror="));
+	let mirror = settingsOf(loadState(DATA).state).githubMirror;
+	if (hasMirrorFlag) {
+		const rawMirror = flag("--mirror", "");
+		if (rawMirror === undefined) {
+			die(L("--mirror 需要指定镜像地址（例如 --mirror https://gh-proxy.com）", "--mirror requires a mirror URL (e.g. --mirror https://gh-proxy.com)"));
+		}
+		mirror = rawMirror;
+	}
+	const { importPersonas, normalizeMirror } = await import("../lib/persona-import.mjs");
 	try {
-		const res = await importPersonas(source, DATA, { overwrite: !noOverwrite });
+		mirror = normalizeMirror(mirror);
+	} catch (e) {
+		die(L(`镜像地址无效：${e.message}`, `Invalid mirror URL: ${e.message}`));
+	}
+	console.log(L(
+		`正在从 ${source}${mirror ? `（镜像 ${mirror}）` : ""} 拉取人设...`,
+		`Pulling personas from ${source}${mirror ? ` (via ${mirror})` : ""}...`,
+	));
+	try {
+		const res = await importPersonas(source, DATA, { overwrite: !noOverwrite, mirror });
 		console.log(L(`\n拉取完成！共导入 ${res.total} 个人设：`, `\nPull complete! Imported ${res.total} persona(s):`));
 		for (const item of res.imported) {
 			console.log(L(
@@ -1178,7 +1211,7 @@ function help() {
 ① 选（写共享配置并同步；已加载动态插件下一轮读取，静态入口需新会话）
    agent-purge use <id>           换 persona（ls 看有哪些，* = 当前；自动刷新已武装的常驻落点）
    agent-purge use <id> --for <h> 只给某一家换 persona；--for <h> follow 恢复跟随全局
-   agent-purge pull [repo]        从 GitHub（默认 ZiChuanLan/some-magic）拉取人设
+   agent-purge pull [repo] [--mirror <url>]  从 GitHub（默认 ZiChuanLan/some-magic）拉取人设
    agent-purge persona import <dir> 从本地目录批量导入人设 (.md)
    agent-purge sync               只刷新常驻落点/命令文件，不换 persona
    agent-purge mode <m>           replace(换身份, 默认) / strict(只留人设) / append(追加) / off
@@ -1239,7 +1272,7 @@ Select once, and every entry point follows.
 1. Configure (writes shared state and syncs active targets)
    agent-purge use <id>             Switch active persona (see agent-purge ls)
    agent-purge use <id> --for <h>   Override persona for one tool (--for <h> follow to reset)
-   agent-purge pull [repo]          Pull personas from GitHub (default: ZiChuanLan/some-magic)
+   agent-purge pull [repo] [--mirror <url>]  Pull personas from GitHub (default: ZiChuanLan/some-magic)
    agent-purge persona import <dir> Import .md personas from a local directory
    agent-purge sync                 Re-sync managed configs and shims
    agent-purge mode <m>             replace (default) / strict / append / off
